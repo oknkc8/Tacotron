@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 from torch.autograd import Variable
-from .attention import AttentionWrapper, Bahdanau_mechanism
+from .Attention import AttentionWrapper, Bahdanau_mechanism
 
 
 class Prenet(nn.Module):
