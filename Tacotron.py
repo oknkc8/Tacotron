@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 from torch.autograd import Variable
-from .Attention import AttentionWrapper, Bahdanau_mechanism
+from Attention import AttentionWrapper, Bahdanau_mechanism
 
 
 class Prenet(nn.Module):
@@ -44,9 +44,9 @@ class BatchNormConv1D(nn.Module):
                  padding,
                  activation=None):
         super().__init__()
-        self.conv1d = nn.Conv1D(input_size, output_size, kernel_size=kernel_size,
+        self.conv1d = nn.Conv1d(input_size, output_size, kernel_size=kernel_size,
                                 stride=stride, padding=padding, bias=False)
-        self.batchnorm1d = nn.BatchNormConv1D(output_size)
+        self.batchnorm1d = nn.BatchNorm1d(output_size)
         self.activation = activation
     
     def forward(self, inputs):
@@ -109,24 +109,28 @@ class CBHG(nn.Module):
                                              kernel_size=k, stride=1, padding=k//2, activation=self.relu)
                              for k in range(1, K+1)])
         self.maxpool1d = nn.MaxPool1d(kernel_size=2, stride=1, padding=1)
-        self.conv1d_proj_1 = BatchNormConv1D(input_size, projection_size_1,
+        self.conv1d_proj_1 = BatchNormConv1D(K * input_size, projection_size_1,
                                              kernel_size=3, stride=1, padding=1, activation=self.relu)
         self.conv1d_proj_2 = BatchNormConv1D(projection_size_1, projection_size_2,
                                              kernel_size=3, stride=1, padding=1)
         self.pre_highway = nn.Linear(projection_size_2, input_size, bias=False)
         self.highway = Highway(input_size, input_size, N_layers=4)
-        self.gru = nn.GRU(input_size, input_size, batch_fisrt=True, bidirectional=True)
+        self.gru = nn.GRU(input_size, input_size, batch_first=True, bidirectional=True)
     
     def forward(self, inputs, input_lengths):
         x = inputs
-        x = x.transpose(1, 2)
+        if x.size(-1) == self.input_size:
+            x = x.transpose(1, 2)
 
+        #print(x.shape)
         T = x.size(-1)
         x = torch.cat(
-                [conv1d(x)[:,:,T]
+                [conv1d(x)[:,:,:T]
                 for conv1d in self.conv1d_bank], dim=1)
         
-        x = self.maxpool1d(x)[:,:,T]
+        #print(x.shape)
+        x = self.maxpool1d(x)[:,:,:T]
+        #print("dfdfd",x.shape)
         x = self.conv1d_proj_1(x)
         x = self.conv1d_proj_2(x)
 
@@ -171,10 +175,10 @@ class Decoder(nn.Module):
         super(Decoder, self).__init__()
         self.mel_dim = mel_dim
         self.r = r
-        self.prenet = Prenet(input_size=256, hidden_size=256, output_size=128)
+        self.prenet = Prenet(mel_dim * r, hidden_size=256, output_size=128)
         self.attn_rnn = AttentionWrapper(
                             nn.GRUCell(256+128, 256),
-                            Bahdanau_mechanism)
+                            Bahdanau_mechanism(256))
         #self.attention_rnn = 
         self.proj_to_decoder = nn.Linear(256+256, 256)
         self.decoder_rnn = nn.Sequential(
@@ -193,18 +197,25 @@ class Decoder(nn.Module):
         # grouping multiple frames
         if targets is not None:
             if targets.size(-1) == self.mel_dim:
-                targets = targets.view(batch_size, targets(1)//self.r, -1)
+                targets = targets.view(batch_size, targets.size(1)//self.r, -1)
             T = targets.size(1)
 
         go_frames = Variable(
-            encoder_outputs.data.new(batch_size, self.mel_dim * self.r)).zero()
+            encoder_outputs.data.new(batch_size, self.mel_dim * self.r).zero_())
         attn_rnn_hidden = Variable(
-            encoder_outputs.data.new(batch_size, 256)).zero()
-        decoder_rnn_hidden = Variable(
-            encoder_outputs.data.new(batch_size, 256)).zero()
+            encoder_outputs.data.new(batch_size, 256).zero_())
+        decoder_rnn_hidden = [Variable(
+            encoder_outputs.data.new(batch_size, 256).zero_())
+            for _ in range(len(self.decoder_rnn))]
         now_attn_value = Variable(
-            encoder_outputs.data.new(batch_size, 256)).zero()
+            encoder_outputs.data.new(batch_size, 256).zero_())
 
+        if targets is not None:
+            targets = targets.transpose(0, 1)
+            
+        #print(targets.shape)
+        #print(greedy)
+        
         outputs = []
         alignments = []
 
@@ -228,7 +239,9 @@ class Decoder(nn.Module):
                                     torch.cat((attn_rnn_hidden, now_attn_value), -1))
             
             for i in range(len(self.decoder_rnn)):
-                decoder_rnn_hidden[i] = self.decoder_rnn(
+                #print(decoder_rnn_input.shape)
+                #print(decoder_rnn_hidden[i].shape)
+                decoder_rnn_hidden[i] = self.decoder_rnn[i](
                                             decoder_rnn_input, decoder_rnn_hidden[i])
                 decoder_rnn_input = decoder_rnn_hidden[i] + decoder_rnn_input
             
@@ -275,6 +288,7 @@ class Tacotron(nn.Module):
         super(Tacotron, self).__init__()
         self.mel_dim = mel_dim
         self.final_output_dim = final_output_dim
+        
         self.encoder = Encoder(N_character, embedding_dim)
         self.decoder = Decoder(mel_dim, r)
         self.cbhg = CBHG(input_size=mel_dim, K=8, projection_size_1=256, projection_size_2=mel_dim)
@@ -283,7 +297,7 @@ class Tacotron(nn.Module):
     def forward(self, inputs, targets=None, input_lengths=None):
         batch_size = inputs.size(0)
 
-        inputs = self.embedding(inputs)
+        #inputs = self.embedding(inputs)
 
         encoder_outputs = self.encoder(inputs, input_lengths)
 

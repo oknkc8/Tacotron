@@ -6,17 +6,21 @@ from torch.nn import functional as F
 
 class Bahdanau_mechanism(nn.Module):
     def __init__(self, dim):
-        super(AttentionWrapper, self).__init__()
-        self.dim = self.dim
+        super(Bahdanau_mechanism, self).__init__()
+        self.dim = dim
         self.query_layer = nn.Linear(dim, dim, bias=False)
         self.tanh = nn.Tanh()
         self.v = nn.Linear(dim, 1, bias=False)
     
     def forward(self, query, processed_memory):
+        if query.dim() == 2:
+            query = query.unsqueeze(1)
+
         processed_query = self.query_layer(query)
         alignment = self.v(self.tanh(processed_query + processed_memory))
 
         return alignment.squeeze(-1)
+
 
 class AttentionWrapper(nn.Module):
     def __init__(self,
@@ -25,7 +29,6 @@ class AttentionWrapper(nn.Module):
         super().__init__()
         self.rnn_cell = rnn_cell
         self.attn_mechansim = attn_mechanism
-        self.softmax = F.softmax()
     
     def forward(self, decoder_input, attn_value, attn_hidden, encoder_output):
         # concat decorder input and previous attention context vector
@@ -37,7 +40,7 @@ class AttentionWrapper(nn.Module):
         alignment = self.attn_mechansim(rnn_cell_output, encoder_output)
 
         # normalize attention value
-        alignment = self.softmax(alignment)
+        alignment = F.softmax(alignment)
 
         alignment = alignment.unsqueeze(1)
         attention_value = torch.bmm(alignment, encoder_output)

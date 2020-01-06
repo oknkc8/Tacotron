@@ -211,7 +211,7 @@ def train(model, data_loader, optimizer,
     model.train()
     if use_cuda:
         model = model.cuda()
-    linear_dim = model.linear_dim
+    linear_dim = model.final_output_dim
 
     criterion = nn.L1Loss()
 
@@ -223,12 +223,6 @@ def train(model, data_loader, optimizer,
             current_lr = _learning_rate_decay(init_lr, global_step)
             for param_group in optimizer.param_groups:
                 param_group['lr'] = current_lr
-
-            print("\n\n\nstep : ",step, " data shape from dataloader")
-            print("x_shape : ",x.shape)
-            print("input_lengths : ",input_lengths.shape)
-            print("mel : ",mel.shape)
-            print("y : ",y.shape)
 
             optimizer.zero_grad()
 
@@ -323,11 +317,11 @@ if __name__ == "__main__":
         collate_fn=collate_fn, pin_memory=hparams.pin_memory)
 
     # Model
-    model = Tacotron(n_vocab=len(symbols),
+    model = Tacotron.Tacotron(N_character=len(symbols),
                      embedding_dim=256,
                      mel_dim=hparams.num_mels,
                      final_output_dim=hparams.num_freq,
-                     r=hparams.outputs_per_step,
+                     r=hparams.outputs_per_step
                      )
     optimizer = optim.Adam(model.parameters(),
                            lr=hparams.initial_learning_rate, 
