@@ -117,7 +117,7 @@ class CBHG(nn.Module):
         self.highway = Highway(input_size, input_size, N_layers=4)
         self.gru = nn.GRU(input_size, input_size, batch_first=True, bidirectional=True)
     
-    def forward(self, inputs, input_lengths):
+    def forward(self, inputs, input_lengths=None):
         x = inputs
         if x.size(-1) == self.input_size:
             x = x.transpose(1, 2)
@@ -254,7 +254,7 @@ class Decoder(nn.Module):
             t += 1
         
         alignments = torch.stack(alignments).transpose(0, 1)
-        outputs = torch.stack(alignments).transpose(0, 1).contiguous()
+        outputs = torch.stack(outputs).transpose(0, 1).contiguous()
 
         return outputs, alignments
     
